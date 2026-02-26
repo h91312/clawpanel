@@ -19,6 +19,8 @@ pub fn run() {
             config::create_backup,
             config::restore_backup,
             config::delete_backup,
+            config::reload_gateway,
+            config::test_model,
             // 服务
             service::get_services_status,
             service::start_service,

@@ -200,3 +200,107 @@ pub fn delete_backup(name: String) -> Result<(), String> {
     fs::remove_file(&path)
         .map_err(|e| format!("删除失败: {e}"))
 }
+
+/// 重载 Gateway 服务（unload + load plist）
+#[tauri::command]
+pub fn reload_gateway() -> Result<String, String> {
+    let home = dirs::home_dir().unwrap_or_default();
+    let plist = format!(
+        "{}/Library/LaunchAgents/ai.openclaw.gateway.plist",
+        home.display()
+    );
+
+    if !std::path::Path::new(&plist).exists() {
+        return Err("Gateway plist 不存在".into());
+    }
+
+    // 先 unload，忽略错误
+    let _ = std::process::Command::new("launchctl")
+        .args(["unload", &plist])
+        .output();
+
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    let output = std::process::Command::new("launchctl")
+        .args(["load", &plist])
+        .output()
+        .map_err(|e| format!("重载 Gateway 失败: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !stderr.trim().is_empty() {
+            return Err(format!("重载 Gateway 失败: {stderr}"));
+        }
+    }
+
+    Ok("Gateway 已重载".into())
+}
+
+/// 测试模型连通性：向 provider 发送一个简单的 chat completion 请求
+#[tauri::command]
+pub async fn test_model(
+    base_url: String,
+    api_key: String,
+    model_id: String,
+) -> Result<String, String> {
+    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
+
+    let body = serde_json::json!({
+        "model": model_id,
+        "messages": [{"role": "user", "content": "Hi"}],
+        "max_tokens": 16,
+        "stream": false
+    });
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))?;
+
+    let mut req = client.post(&url).json(&body);
+    if !api_key.is_empty() {
+        req = req.header("Authorization", format!("Bearer {api_key}"));
+    }
+
+    let resp = req.send().await.map_err(|e| {
+        if e.is_timeout() {
+            "请求超时 (30s)".to_string()
+        } else if e.is_connect() {
+            format!("连接失败: {e}")
+        } else {
+            format!("请求失败: {e}")
+        }
+    })?;
+
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+
+    if !status.is_success() {
+        // 尝试提取错误信息
+        let msg = serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .and_then(|v| {
+                v.get("error")
+                    .and_then(|e| e.get("message"))
+                    .and_then(|m| m.as_str())
+                    .map(String::from)
+            })
+            .unwrap_or_else(|| format!("HTTP {status}"));
+        return Err(msg);
+    }
+
+    // 提取回复内容
+    let reply = serde_json::from_str::<serde_json::Value>(&text)
+        .ok()
+        .and_then(|v| {
+            v.get("choices")
+                .and_then(|c| c.get(0))
+                .and_then(|c| c.get("message"))
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_str())
+                .map(String::from)
+        })
+        .unwrap_or_else(|| "（无回复内容）".into());
+
+    Ok(reply)
+}

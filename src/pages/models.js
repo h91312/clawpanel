@@ -145,6 +145,7 @@ function renderModelCards(providerKey, models, primary) {
           </div>
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
+          <button class="btn btn-sm btn-secondary" data-action="test-model">测试</button>
           ${!isPrimary ? `<button class="btn btn-sm btn-secondary" data-action="set-primary">设为主模型</button>` : ''}
           <button class="btn btn-sm btn-secondary" data-action="edit-model">编辑</button>
           <button class="btn btn-sm btn-danger" data-action="delete-model">删除</button>
@@ -191,6 +192,10 @@ function bindProviderEvents(page, state) {
         renderProviders(page, state)
         renderDefaultBar(page, state)
         toast(`已设为主模型: ${full}`, 'success')
+      } else if (action === 'test-model') {
+        const card = btn.closest('.model-card')
+        const idx = parseInt(card.dataset.index)
+        testModel(btn, state, providerKey, idx)
       }
     }
   })
@@ -214,7 +219,13 @@ function bindTopActions(page, state) {
     btn.textContent = '保存中...'
     try {
       await api.writeOpenclawConfig(state.config)
-      toast('模型配置已保存', 'success')
+      toast('模型配置已保存，正在重载 Gateway...', 'info')
+      try {
+        await api.reloadGateway()
+        toast('Gateway 已重载，模型配置已生效', 'success')
+      } catch (e) {
+        toast('配置已保存，但重载 Gateway 失败: ' + e, 'warning')
+      }
     } catch (e) {
       toast('保存失败: ' + e, 'error')
     } finally {
@@ -236,7 +247,13 @@ function bindTopActions(page, state) {
       applyDefaultModel(state)
       await api.writeOpenclawConfig(state.config)
       renderDefaultBar(page, state)
-      toast('默认模型已应用', 'success')
+      toast('默认模型已应用，正在重载 Gateway...', 'info')
+      try {
+        await api.reloadGateway()
+        toast('Gateway 已重载，默认模型已生效', 'success')
+      } catch (e) {
+        toast('配置已保存，但重载 Gateway 失败: ' + e, 'warning')
+      }
     } catch (e) {
       toast('应用失败: ' + e, 'error')
     } finally {
@@ -349,4 +366,25 @@ function editModel(page, state, providerKey, idx) {
       toast('模型已更新', 'success')
     },
   })
+}
+
+// 测试模型连通性
+async function testModel(btn, state, providerKey, idx) {
+  const provider = state.config.models.providers[providerKey]
+  const model = provider.models[idx]
+  const modelId = typeof model === 'string' ? model : model.id
+
+  btn.disabled = true
+  const origText = btn.textContent
+  btn.textContent = '测试中...'
+
+  try {
+    const reply = await api.testModel(provider.baseUrl, provider.apiKey || '', modelId)
+    toast(`${modelId} 连通正常: "${reply.slice(0, 60)}"`, 'success')
+  } catch (e) {
+    toast(`${modelId} 测试失败: ${e}`, 'error')
+  } finally {
+    btn.disabled = false
+    btn.textContent = origText
+  }
 }

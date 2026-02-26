@@ -122,7 +122,13 @@ async function saveConfig(page, state) {
 
   try {
     await api.writeOpenclawConfig(state.config)
-    toast('Gateway 配置已保存', 'success')
+    toast('Gateway 配置已保存，正在重载服务...', 'info')
+    try {
+      await api.reloadGateway()
+      toast('Gateway 已重载，配置已生效', 'success')
+    } catch (e) {
+      toast('配置已保存，但重载 Gateway 失败: ' + e, 'warning')
+    }
   } catch (e) {
     toast('保存失败: ' + e, 'error')
   }

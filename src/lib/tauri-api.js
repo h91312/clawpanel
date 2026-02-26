@@ -18,10 +18,13 @@ async function invoke(cmd, args = {}) {
 function mockInvoke(cmd, args) {
   const mocks = {
     get_services_status: () => [
-      { label: 'ai.openclaw.gateway', pid: 54284, running: true, description: 'OpenClaw Gateway' },
-      { label: 'com.openclaw.guardian.watch', pid: 54301, running: true, description: '健康监控 (60s)' },
+      { label: 'ai.openclaw.gateway', pid: null, running: false, description: 'OpenClaw Gateway' },
+      { label: 'com.cftunnel.cloudflared', pid: 35218, running: true, description: 'cftunnel 隧道服务' },
+      { label: 'com.openclaw.guardian.watch', pid: 55290, running: true, description: '健康监控 (60s)' },
       { label: 'com.openclaw.guardian.backup', pid: null, running: false, description: '配置备份 (3600s)' },
-      { label: 'com.openclaw.watchdog', pid: 54320, running: true, description: '看门狗 (120s)' },
+      { label: 'com.openclaw.watchdog', pid: null, running: false, description: '看门狗 (120s)' },
+      { label: 'com.openclaw.webhook-router', pid: 38983, running: true, description: 'Webhook 路由' },
+      { label: 'com.openclaw.webhook-tunnel', pid: null, running: false, description: 'Webhook SSH 隧道' },
     ],
     get_version_info: () => ({
       current: '2026.2.23',
@@ -99,6 +102,8 @@ function mockInvoke(cmd, args) {
     start_service: () => true,
     stop_service: () => true,
     restart_service: () => true,
+    reload_gateway: () => 'Gateway 已重载',
+    test_model: ({ base_url, model_id }) => `模型 ${model_id} 连通正常 (mock)`,
     write_env_file: () => true,
     list_backups: () => [
       { name: 'openclaw-20260226-143000.json', size: 8542, created_at: 1740577800 },
@@ -138,6 +143,8 @@ export const api = {
   writeOpenclawConfig: (config) => invoke('write_openclaw_config', { config }),
   readMcpConfig: () => invoke('read_mcp_config'),
   writeMcpConfig: (config) => invoke('write_mcp_config', { config }),
+  reloadGateway: () => invoke('reload_gateway'),
+  testModel: (baseUrl, apiKey, modelId) => invoke('test_model', { base_url: baseUrl, api_key: apiKey, model_id: modelId }),
 
   // 日志
   readLogTail: (logName, lines = 100) => invoke('read_log_tail', { logName, lines }),
