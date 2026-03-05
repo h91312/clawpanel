@@ -11,7 +11,13 @@ pub async fn list_agents() -> Result<Value, String> {
         .args(["agents", "list", "--json"])
         .output()
         .await
-        .map_err(|e| format!("执行失败: {e}"))?;
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                "OpenClaw CLI 未找到，请确认已安装并重启 ClawPanel。\n如果使用 nvm 安装，请从终端启动 ClawPanel。".to_string()
+            } else {
+                format!("执行失败: {e}")
+            }
+        })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -56,7 +62,13 @@ pub async fn add_agent(
         .args(&args)
         .output()
         .await
-        .map_err(|e| format!("执行失败: {e}"))?;
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                "OpenClaw CLI 未找到，请确认已安装并重启 ClawPanel。".to_string()
+            } else {
+                format!("执行失败: {e}")
+            }
+        })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -80,7 +92,13 @@ pub async fn delete_agent(id: String) -> Result<String, String> {
         .args(["agents", "delete", &id])
         .output()
         .await
-        .map_err(|e| format!("执行失败: {e}"))?;
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                "OpenClaw CLI 未找到，请确认已安装并重启 ClawPanel。".to_string()
+            } else {
+                format!("执行失败: {e}")
+            }
+        })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
