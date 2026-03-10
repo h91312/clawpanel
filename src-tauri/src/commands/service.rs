@@ -18,11 +18,13 @@ fn description_map() -> HashMap<&'static str, &'static str> {
     ])
 }
 
+#[cfg(target_os = "windows")]
 fn looks_like_gateway_command_line(command_line: &str) -> bool {
     let text = command_line.to_ascii_lowercase();
     text.contains("openclaw") && text.contains("gateway")
 }
 
+#[cfg(target_os = "windows")]
 fn parse_listening_pids_from_netstat(stdout: &str, port: u16) -> Vec<u32> {
     let port_pattern = format!(":{port}");
     let mut pids = HashSet::new();
