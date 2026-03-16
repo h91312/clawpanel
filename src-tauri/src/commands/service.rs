@@ -653,6 +653,16 @@ mod platform {
     fn candidate_cli_paths() -> Vec<PathBuf> {
         let mut candidates = Vec::new();
 
+        // standalone 安装目录（优先检测，覆盖所有可能位置）
+        if let Ok(localappdata) = env::var("LOCALAPPDATA") {
+            // Inno Setup PrivilegesRequired=lowest 默认路径
+            candidates.push(Path::new(&localappdata).join("Programs").join("OpenClaw").join("openclaw.cmd"));
+            candidates.push(Path::new(&localappdata).join("OpenClaw").join("openclaw.cmd"));
+        }
+        if let Ok(pf) = env::var("ProgramFiles") {
+            candidates.push(Path::new(&pf).join("OpenClaw").join("openclaw.cmd"));
+        }
+
         if let Ok(appdata) = env::var("APPDATA") {
             candidates.push(Path::new(&appdata).join("npm").join("openclaw.cmd"));
         }
@@ -698,24 +708,24 @@ mod platform {
         }
 
         // 方式2: 通过 where 查找（兼容 nvm、自定义 prefix 等）
+        // 过滤掉第三方 openclaw（如 CherryStudio 的 .cherrystudio/bin/openclaw.exe）
         let mut where_cmd = std::process::Command::new("where");
         where_cmd.arg("openclaw");
         where_cmd.env("PATH", crate::commands::enhanced_path());
         where_cmd.creation_flags(CREATE_NO_WINDOW);
         if let Ok(o) = where_cmd.output() {
-            if o.status.success() && !String::from_utf8_lossy(&o.stdout).trim().is_empty() {
-                return true;
-            }
-        }
-
-        // 方式3: 直接执行版本命令兜底
-        let mut cmd = std::process::Command::new("cmd");
-        cmd.args(["/c", "openclaw", "--version"]);
-        cmd.env("PATH", crate::commands::enhanced_path());
-        cmd.creation_flags(CREATE_NO_WINDOW);
-        if let Ok(o) = cmd.output() {
             if o.status.success() {
-                return true;
+                let stdout = String::from_utf8_lossy(&o.stdout);
+                for line in stdout.lines() {
+                    let p = line.trim().to_lowercase();
+                    // 跳过已知第三方 openclaw 路径
+                    if p.contains(".cherrystudio") || p.contains("cherry-studio") {
+                        continue;
+                    }
+                    if !p.is_empty() {
+                        return true;
+                    }
+                }
             }
         }
         false
