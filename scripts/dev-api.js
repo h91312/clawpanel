@@ -515,7 +515,7 @@ function getLocalOpenclawVersion() {
     } catch {}
   }
   if (!current) {
-    try { current = execSync('openclaw --version 2>&1', { windowsHide: true }).toString().trim().split(/\s+/).pop() } catch {}
+    try { current = execSync('openclaw --version 2>&1', { windowsHide: true }).toString().trim().split(/\s+/).find(w => /^\d/.test(w)) || null } catch {}
   }
   return current || null
 }
