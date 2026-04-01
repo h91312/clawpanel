@@ -17,6 +17,7 @@ const STORAGE_SESSION_KEY = 'clawpanel-last-session'
 const STORAGE_MODEL_KEY = 'clawpanel-chat-selected-model'
 const STORAGE_SIDEBAR_KEY = 'clawpanel-chat-sidebar-open'
 const STORAGE_SESSION_NAMES_KEY = 'clawpanel-chat-session-names'
+const STORAGE_WORKSPACE_PANEL_KEY = 'clawpanel-chat-workspace-open'
 
 const COMMANDS = [
   { title: 'chat.cmdSession', commands: [
@@ -106,6 +107,14 @@ let _hostedAbort = null
 let _hostedLastTargetTs = 0
 let _hostedAutoStopTimer = null
 let _hostedStartTime = 0
+let _workspaceBtn = null, _workspacePanelEl = null, _workspaceAgentBadgeEl = null, _workspaceAgentTitleEl = null
+let _workspacePathEl = null, _workspaceCoreListEl = null, _workspaceTreeEl = null, _workspaceCurrentFileEl = null
+let _workspaceMetaEl = null, _workspaceEditorEl = null, _workspacePreviewEl = null, _workspaceEmptyEl = null
+let _workspaceSaveBtn = null, _workspaceReloadBtn = null, _workspacePreviewBtn = null
+let _workspaceInfo = null, _workspaceCoreFiles = [], _workspaceTreeCache = new Map(), _workspaceExpandedDirs = new Set()
+let _workspaceCurrentAgentId = 'main', _workspaceCurrentFile = null, _workspacePreviewMode = false, _workspaceDirty = false
+let _workspaceLoadedContent = '', _workspaceLoading = false
+let _workspaceLoadSeq = 0, _workspaceOpenSeq = 0
 
 export async function render() {
   const page = document.createElement('div')
@@ -146,12 +155,59 @@ export async function render() {
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
             </button>
           </div>
+          <button class="btn btn-sm btn-ghost chat-workspace-trigger" id="btn-chat-workspace" title="${t('chat.openWorkspace')}">
+            ${svgIcon('folder', 16)}
+            <span class="chat-workspace-trigger-label">${t('chat.workspace')}</span>
+            <span class="chat-workspace-trigger-agent" id="chat-workspace-trigger-agent">main</span>
+          </button>
           <button class="btn btn-sm btn-ghost" id="btn-cmd" title="${t('chat.shortcuts')}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M18 3a3 3 0 00-3 3v12a3 3 0 003 3 3 3 0 003-3 3 3 0 00-3-3H6a3 3 0 00-3 3 3 3 0 003 3 3 3 0 003-3V6a3 3 0 00-3-3 3 3 0 00-3 3 3 3 0 003 3h12a3 3 0 003-3 3 3 0 00-3-3z"/></svg>
           </button>
           <button class="btn btn-sm btn-ghost" id="btn-reset-session" title="${t('chat.resetSession')}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
           </button>
+        </div>
+      </div>
+      <div class="chat-workspace-panel" id="chat-workspace-panel" style="display:none">
+        <div class="chat-workspace-header">
+          <div class="chat-workspace-header-copy">
+            <div class="chat-workspace-title-row">
+              <strong>${t('chat.workspaceFiles')}</strong>
+              <span class="chat-workspace-agent-badge" id="chat-workspace-agent-badge">main</span>
+            </div>
+            <div class="chat-workspace-agent-title" id="chat-workspace-agent-title"></div>
+            <div class="chat-workspace-path" id="chat-workspace-path"></div>
+          </div>
+          <div class="chat-workspace-header-actions">
+            <button class="chat-workspace-icon-btn" id="chat-workspace-refresh" title="${t('common.refresh')}">${svgIcon('refresh-cw', 14)}</button>
+            <button class="chat-workspace-icon-btn" id="chat-workspace-close" title="${t('common.close')}">${svgIcon('x', 14)}</button>
+          </div>
+        </div>
+        <div class="chat-workspace-body">
+          <div class="chat-workspace-sidebar-pane">
+            <div class="chat-workspace-section">
+              <div class="chat-workspace-section-title">${t('chat.coreFiles')}</div>
+              <div class="chat-workspace-core-list" id="chat-workspace-core-list"></div>
+            </div>
+            <div class="chat-workspace-section">
+              <div class="chat-workspace-section-title">${t('chat.workspaceExplorer')}</div>
+              <div class="chat-workspace-tree" id="chat-workspace-tree"></div>
+            </div>
+          </div>
+          <div class="chat-workspace-editor-pane">
+            <div class="chat-workspace-editor-toolbar">
+              <div class="chat-workspace-current-file" id="chat-workspace-current-file">${t('chat.selectWorkspaceFile')}</div>
+              <div class="chat-workspace-editor-actions">
+                <button class="btn btn-sm btn-ghost" id="chat-workspace-reload" disabled>${svgIcon('refresh-cw', 14)} ${t('chat.reloadWorkspaceFile')}</button>
+                <button class="btn btn-sm btn-ghost" id="chat-workspace-preview-toggle" disabled>${svgIcon('eye', 14)} <span id="chat-workspace-preview-label">${t('chat.previewWorkspaceFile')}</span></button>
+                <button class="btn btn-sm btn-primary" id="chat-workspace-save" disabled>${t('common.save')}</button>
+              </div>
+            </div>
+            <div class="chat-workspace-editor-meta" id="chat-workspace-editor-meta"></div>
+            <textarea class="chat-workspace-editor" id="chat-workspace-editor" spellcheck="false" disabled placeholder="${t('chat.selectWorkspaceFile')}"></textarea>
+            <div class="chat-workspace-preview" id="chat-workspace-preview" style="display:none"></div>
+            <div class="chat-workspace-empty" id="chat-workspace-empty">${t('chat.workspaceEmptyState')}</div>
+          </div>
         </div>
       </div>
       <div class="chat-messages" id="chat-messages">
@@ -256,10 +312,28 @@ export async function render() {
   _hostedAutoStopEl = page.querySelector('#hosted-agent-auto-stop')
   _hostedSaveBtn = page.querySelector('#hosted-agent-save')
   _hostedCloseBtn = page.querySelector('#hosted-agent-close')
+  _workspaceBtn = page.querySelector('#btn-chat-workspace')
+  _workspacePanelEl = page.querySelector('#chat-workspace-panel')
+  _workspaceAgentBadgeEl = page.querySelector('#chat-workspace-agent-badge')
+  _workspaceAgentTitleEl = page.querySelector('#chat-workspace-agent-title')
+  _workspacePathEl = page.querySelector('#chat-workspace-path')
+  _workspaceCoreListEl = page.querySelector('#chat-workspace-core-list')
+  _workspaceTreeEl = page.querySelector('#chat-workspace-tree')
+  _workspaceCurrentFileEl = page.querySelector('#chat-workspace-current-file')
+  _workspaceMetaEl = page.querySelector('#chat-workspace-editor-meta')
+  _workspaceEditorEl = page.querySelector('#chat-workspace-editor')
+  _workspacePreviewEl = page.querySelector('#chat-workspace-preview')
+  _workspaceEmptyEl = page.querySelector('#chat-workspace-empty')
+  _workspaceSaveBtn = page.querySelector('#chat-workspace-save')
+  _workspaceReloadBtn = page.querySelector('#chat-workspace-reload')
+  _workspacePreviewBtn = page.querySelector('#chat-workspace-preview-toggle')
   page.querySelector('#chat-sidebar')?.classList.toggle('open', getSidebarOpen())
 
   bindEvents(page)
   bindConnectOverlay(page)
+  const workspaceOpen = getWorkspacePanelOpen()
+  applyWorkspacePanelVisibility(workspaceOpen)
+  if (!workspaceOpen) syncWorkspaceContext(false)
 
   // 首次使用引导提示
   showPageGuide(_messagesEl)
@@ -357,6 +431,83 @@ function bindEvents(page) {
   page.querySelector('#btn-cmd').addEventListener('click', () => toggleCmdPanel())
   page.querySelector('#btn-reset-session').addEventListener('click', () => resetCurrentSession())
   page.querySelector('#btn-refresh-models')?.addEventListener('click', () => loadModelOptions(true))
+  _workspaceBtn?.addEventListener('click', async (e) => {
+    e.stopPropagation()
+    if (getWorkspacePanelOpen() && _workspaceDirty) {
+      const yes = await confirmWorkspaceDiscardIfNeeded()
+      if (!yes) return
+      discardWorkspaceChanges()
+    }
+    toggleWorkspacePanel()
+  })
+  page.querySelector('#chat-workspace-close')?.addEventListener('click', async () => {
+    if (_workspaceDirty) {
+      const yes = await confirmWorkspaceDiscardIfNeeded()
+      if (!yes) return
+      discardWorkspaceChanges()
+    }
+    toggleWorkspacePanel(false)
+  })
+  page.querySelector('#chat-workspace-refresh')?.addEventListener('click', async () => {
+    if (_workspaceDirty) {
+      const yes = await confirmWorkspaceDiscardIfNeeded()
+      if (!yes) return
+      discardWorkspaceChanges()
+    }
+    loadWorkspacePanelData(true)
+  })
+  _workspaceCoreListEl?.addEventListener('click', async (e) => {
+    const item = e.target.closest('[data-core-path]')
+    if (!item) return
+    const relativePath = item.dataset.corePath || ''
+    if (!relativePath) return
+    if (item.dataset.coreExists === '1') await openWorkspaceFile(relativePath, { kind: 'core' })
+    else {
+      const yes = await confirmWorkspaceDiscardIfNeeded()
+      if (!yes) return
+      discardWorkspaceChanges()
+      prepareWorkspaceDraftFile(relativePath, { kind: 'core' })
+    }
+  })
+  _workspaceTreeEl?.addEventListener('click', async (e) => {
+    const toggle = e.target.closest('[data-tree-toggle]')
+    if (toggle) {
+      try {
+        await toggleWorkspaceDirectory(toggle.dataset.treeToggle || '')
+      } catch (err) {
+        toast(`${t('chat.workspaceLoadFailed')}: ${err?.message || err}`, 'error')
+      }
+      return
+    }
+    const link = e.target.closest('[data-tree-path]')
+    if (!link) return
+    const relativePath = link.dataset.treePath || ''
+    if (!relativePath) return
+    if (link.dataset.treeType === 'dir') {
+      try {
+        await toggleWorkspaceDirectory(relativePath)
+      } catch (err) {
+        toast(`${t('chat.workspaceLoadFailed')}: ${err?.message || err}`, 'error')
+      }
+      return
+    }
+    await openWorkspaceFile(relativePath, { kind: 'tree' })
+  })
+  _workspaceEditorEl?.addEventListener('input', () => {
+    if (!_workspaceCurrentFile || !_workspaceEditorEl) return
+    _workspaceDirty = _workspaceEditorEl.value !== _workspaceLoadedContent
+    if (_workspacePreviewMode) renderWorkspacePreview()
+    updateWorkspaceEditorState()
+  })
+  _workspaceEditorEl?.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+      e.preventDefault()
+      saveWorkspaceCurrentFile()
+    }
+  })
+  _workspaceReloadBtn?.addEventListener('click', () => reloadWorkspaceCurrentFile())
+  _workspacePreviewBtn?.addEventListener('click', () => toggleWorkspacePreview())
+  _workspaceSaveBtn?.addEventListener('click', () => saveWorkspaceCurrentFile())
 
   // 文件上传
   page.querySelector('#chat-attach-btn').addEventListener('click', () => _fileInputEl.click())
@@ -471,6 +622,383 @@ function getSidebarOpen() {
 
 function setSidebarOpen(open) {
   localStorage.setItem(STORAGE_SIDEBAR_KEY, open ? '1' : '0')
+}
+
+function getWorkspacePanelOpen() {
+  return localStorage.getItem(STORAGE_WORKSPACE_PANEL_KEY) === '1'
+}
+
+function setWorkspacePanelOpen(open) {
+  localStorage.setItem(STORAGE_WORKSPACE_PANEL_KEY, open ? '1' : '0')
+}
+
+function formatWorkspaceFileSize(bytes) {
+  const size = Number(bytes) || 0
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function formatWorkspaceFileTime(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleString()
+}
+
+function isMarkdownWorkspaceFile(relativePath) {
+  return /\.(md|markdown|mdx)$/i.test(relativePath || '')
+}
+
+async function confirmWorkspaceDiscardIfNeeded() {
+  if (!_workspaceDirty) return true
+  return showConfirm(t('chat.confirmDiscardWorkspaceChanges'))
+}
+
+function discardWorkspaceChanges() {
+  if (!_workspaceCurrentFile) {
+    _workspaceDirty = false
+    updateWorkspaceEditorState()
+    return
+  }
+  if (_workspaceEditorEl) _workspaceEditorEl.value = _workspaceLoadedContent
+  _workspaceDirty = false
+  if (_workspacePreviewMode) renderWorkspacePreview()
+  updateWorkspaceEditorState()
+}
+
+function getCurrentWorkspaceAgentId() {
+  return parseSessionAgent(_sessionKey) || wsClient.snapshot?.sessionDefaults?.defaultAgentId || 'main'
+}
+
+function getWorkspaceAgentTitle() {
+  if (_sessionKey) return getDisplayLabel(_sessionKey)
+  if (_workspaceCurrentAgentId === 'main') return t('chat.mainSession')
+  return _workspaceCurrentAgentId || t('chat.workspace')
+}
+
+async function syncWorkspaceContext(reload = true) {
+  const nextAgentId = getCurrentWorkspaceAgentId()
+  const prevAgentId = _workspaceCurrentAgentId
+  _workspaceCurrentAgentId = nextAgentId || 'main'
+
+  const triggerAgentEl = _page?.querySelector('#chat-workspace-trigger-agent')
+  if (triggerAgentEl) triggerAgentEl.textContent = _workspaceCurrentAgentId
+  if (_workspaceAgentBadgeEl) _workspaceAgentBadgeEl.textContent = _workspaceCurrentAgentId
+  if (_workspaceAgentTitleEl) {
+    _workspaceAgentTitleEl.textContent = getWorkspaceAgentTitle()
+  }
+
+  if (!_workspacePanelEl || !getWorkspacePanelOpen()) return
+  if (!reload && prevAgentId === _workspaceCurrentAgentId && _workspaceInfo) return
+
+  if (prevAgentId !== _workspaceCurrentAgentId) {
+    _workspaceDirty = false
+    _workspaceCurrentFile = null
+  }
+
+  await loadWorkspacePanelData(prevAgentId === _workspaceCurrentAgentId)
+}
+
+function applyWorkspacePanelVisibility(open) {
+  if (!_workspacePanelEl) return
+  _workspacePanelEl.style.display = open ? '' : 'none'
+  _workspaceBtn?.classList.toggle('is-active', open)
+  if (open) syncWorkspaceContext(true)
+}
+
+function toggleWorkspacePanel(force) {
+  const nextOpen = typeof force === 'boolean' ? force : !getWorkspacePanelOpen()
+  setWorkspacePanelOpen(nextOpen)
+  applyWorkspacePanelVisibility(nextOpen)
+}
+
+function renderWorkspacePanelMeta() {
+  if (_workspaceAgentBadgeEl) _workspaceAgentBadgeEl.textContent = _workspaceCurrentAgentId
+  if (_workspaceAgentTitleEl) {
+    _workspaceAgentTitleEl.textContent = getWorkspaceAgentTitle()
+  }
+  if (_workspacePathEl) {
+    const path = _workspaceInfo?.workspacePath || ''
+    _workspacePathEl.textContent = path || t('chat.workspaceUnavailable')
+    _workspacePathEl.title = path || ''
+  }
+}
+
+function renderWorkspaceCoreFiles() {
+  if (!_workspaceCoreListEl) return
+  if (!_workspaceCoreFiles.length) {
+    _workspaceCoreListEl.innerHTML = `<div class="chat-workspace-note">${t('chat.workspaceNoCoreFiles')}</div>`
+    return
+  }
+
+  _workspaceCoreListEl.innerHTML = _workspaceCoreFiles.map(file => {
+    const active = _workspaceCurrentFile?.relativePath === file.name ? ' active' : ''
+    const status = file.exists ? t('common.edit') : t('common.add')
+    return `
+      <button class="chat-workspace-core-item${active}" data-core-path="${escapeAttr(file.name)}" data-core-exists="${file.exists ? '1' : '0'}" title="${escapeAttr(file.path || file.name)}">
+        <span class="chat-workspace-core-icon">${svgIcon(file.exists ? 'file-text' : 'file-plain', 14)}</span>
+        <span class="chat-workspace-core-copy">
+          <span class="chat-workspace-core-name">${escapeAttr(file.name)}</span>
+          <span class="chat-workspace-core-status ${file.exists ? 'exists' : 'missing'}">${status}</span>
+        </span>
+      </button>
+    `
+  }).join('')
+}
+
+function renderWorkspaceTreeNode(entry, depth) {
+  const isDir = entry.type === 'dir'
+  const expanded = isDir && _workspaceExpandedDirs.has(entry.relativePath)
+  const active = _workspaceCurrentFile?.relativePath === entry.relativePath ? ' active' : ''
+  const children = expanded
+    ? (_workspaceTreeCache.get(entry.relativePath) || []).map(child => renderWorkspaceTreeNode(child, depth + 1)).join('')
+    : ''
+
+  return `
+    <div class="chat-workspace-tree-node">
+      <div class="chat-workspace-tree-row${active}" style="padding-left:${12 + depth * 14}px">
+        ${isDir
+          ? `<button class="chat-workspace-tree-toggle" data-tree-toggle="${escapeAttr(entry.relativePath)}">${expanded ? '▾' : '▸'}</button>`
+          : '<span class="chat-workspace-tree-toggle is-spacer"></span>'}
+        <button class="chat-workspace-tree-link" data-tree-path="${escapeAttr(entry.relativePath)}" data-tree-type="${entry.type}" data-tree-editable="${entry.editable ? '1' : '0'}" title="${escapeAttr(entry.relativePath)}">
+          ${svgIcon(isDir ? 'folder' : (entry.previewable ? 'file-text' : 'file'), 14)}
+          <span class="chat-workspace-tree-name">${escapeAttr(entry.name)}</span>
+        </button>
+      </div>
+      ${children}
+    </div>
+  `
+}
+
+function renderWorkspaceTree() {
+  if (!_workspaceTreeEl) return
+  const rootEntries = _workspaceTreeCache.get('') || []
+  if (!rootEntries.length) {
+    _workspaceTreeEl.innerHTML = `<div class="chat-workspace-note">${t('chat.workspaceTreeEmpty')}</div>`
+    return
+  }
+  _workspaceTreeEl.innerHTML = rootEntries.map(entry => renderWorkspaceTreeNode(entry, 0)).join('')
+}
+
+function renderWorkspacePreview() {
+  if (!_workspacePreviewEl || !_workspaceEditorEl) return
+  _workspacePreviewEl.innerHTML = renderMarkdown(_workspaceEditorEl.value || '')
+}
+
+function updateWorkspaceEditorState() {
+  const hasFile = !!_workspaceCurrentFile
+  const canSaveDraft = hasFile && _workspaceCurrentFile?.exists === false
+  if (_workspaceCurrentFileEl) {
+    _workspaceCurrentFileEl.textContent = hasFile
+      ? `${_workspaceCurrentFile.relativePath}${_workspaceDirty ? ' *' : ''}`
+      : t('chat.selectWorkspaceFile')
+  }
+  if (_workspaceSaveBtn) _workspaceSaveBtn.disabled = !hasFile || (!canSaveDraft && !_workspaceDirty) || _workspaceLoading
+  if (_workspaceReloadBtn) _workspaceReloadBtn.disabled = !hasFile || _workspaceLoading
+  if (_workspacePreviewBtn) _workspacePreviewBtn.disabled = !hasFile || !_workspaceCurrentFile?.previewable || _workspaceLoading
+  const previewLabelEl = _page?.querySelector('#chat-workspace-preview-label')
+  if (previewLabelEl) previewLabelEl.textContent = _workspacePreviewMode ? t('chat.editWorkspaceFile') : t('chat.previewWorkspaceFile')
+  if (_workspaceEditorEl) {
+    _workspaceEditorEl.disabled = !hasFile || _workspaceLoading
+    _workspaceEditorEl.style.display = hasFile && !_workspacePreviewMode ? '' : 'none'
+  }
+  if (_workspacePreviewEl) {
+    _workspacePreviewEl.style.display = hasFile && _workspacePreviewMode ? '' : 'none'
+  }
+  if (_workspaceEmptyEl) {
+    _workspaceEmptyEl.style.display = hasFile ? 'none' : ''
+  }
+  if (hasFile && _workspacePreviewMode) renderWorkspacePreview()
+}
+
+function resetWorkspaceEditor(emptyText = t('chat.workspaceEmptyState')) {
+  _workspaceCurrentFile = null
+  _workspacePreviewMode = false
+  _workspaceDirty = false
+  _workspaceLoadedContent = ''
+  if (_workspaceMetaEl) _workspaceMetaEl.textContent = ''
+  if (_workspaceEditorEl) {
+    _workspaceEditorEl.value = ''
+    _workspaceEditorEl.placeholder = t('chat.selectWorkspaceFile')
+  }
+  if (_workspacePreviewEl) {
+    _workspacePreviewEl.innerHTML = ''
+    _workspacePreviewEl.style.display = 'none'
+  }
+  if (_workspaceEmptyEl) _workspaceEmptyEl.textContent = emptyText
+  renderWorkspaceCoreFiles()
+  renderWorkspaceTree()
+  updateWorkspaceEditorState()
+}
+
+function prepareWorkspaceDraftFile(relativePath, options = {}) {
+  const { kind = 'core', previewable = isMarkdownWorkspaceFile(relativePath) } = options
+  _workspaceCurrentFile = { agentId: _workspaceCurrentAgentId, relativePath, kind, previewable, exists: false }
+  _workspacePreviewMode = false
+  _workspaceDirty = false
+  _workspaceLoadedContent = ''
+  if (_workspaceEditorEl) {
+    _workspaceEditorEl.value = ''
+    _workspaceEditorEl.placeholder = t('chat.workspaceDraftHint')
+  }
+  if (_workspaceMetaEl) _workspaceMetaEl.textContent = t('chat.workspaceDraftHint')
+  renderWorkspaceCoreFiles()
+  renderWorkspaceTree()
+  updateWorkspaceEditorState()
+}
+
+async function loadWorkspacePanelData(preserveCurrentFile = false) {
+  if (!_workspaceCoreListEl || !_workspaceTreeEl) return
+  const loadSeq = ++_workspaceLoadSeq
+  const agentId = _workspaceCurrentAgentId || 'main'
+  _workspaceLoading = true
+  renderWorkspacePanelMeta()
+  _workspaceCoreListEl.innerHTML = `<div class="chat-workspace-note">${t('common.loading')}</div>`
+  _workspaceTreeEl.innerHTML = `<div class="chat-workspace-note">${t('common.loading')}</div>`
+  updateWorkspaceEditorState()
+
+  try {
+    const previousFile = preserveCurrentFile ? _workspaceCurrentFile : null
+    const [info, coreFiles, rootEntries] = await Promise.all([
+      api.getAgentWorkspaceInfo(agentId),
+      api.listAgentFiles(agentId),
+      api.listAgentWorkspaceEntries(agentId, ''),
+    ])
+
+    if (loadSeq !== _workspaceLoadSeq || agentId !== _workspaceCurrentAgentId) return
+
+    _workspaceInfo = info || null
+    _workspaceCoreFiles = Array.isArray(coreFiles) ? coreFiles : []
+    _workspaceTreeCache = new Map([['', Array.isArray(rootEntries) ? rootEntries : []]])
+    _workspaceExpandedDirs = new Set()
+    renderWorkspacePanelMeta()
+    renderWorkspaceCoreFiles()
+    renderWorkspaceTree()
+
+    if (previousFile && previousFile.agentId === agentId) {
+      if (previousFile.kind === 'core' && previousFile.exists === false) {
+        prepareWorkspaceDraftFile(previousFile.relativePath, previousFile)
+      } else {
+        await openWorkspaceFile(previousFile.relativePath, { kind: previousFile.kind, force: true, silent: true })
+      }
+    } else {
+      resetWorkspaceEditor(t('chat.workspaceEmptyState'))
+    }
+  } catch (e) {
+    if (loadSeq !== _workspaceLoadSeq || agentId !== _workspaceCurrentAgentId) return
+    _workspaceInfo = null
+    _workspaceCoreFiles = []
+    _workspaceTreeCache = new Map([['', []]])
+    _workspaceExpandedDirs = new Set()
+    resetWorkspaceEditor(t('chat.workspaceUnavailable'))
+    renderWorkspacePanelMeta()
+    const message = e?.message || String(e)
+    _workspaceCoreListEl.innerHTML = `<div class="chat-workspace-note is-error">${escapeAttr(message)}</div>`
+    _workspaceTreeEl.innerHTML = `<div class="chat-workspace-note is-error">${escapeAttr(message)}</div>`
+    toast(`${t('chat.workspaceLoadFailed')}: ${message}`, 'error')
+  } finally {
+    if (loadSeq !== _workspaceLoadSeq) return
+    _workspaceLoading = false
+    updateWorkspaceEditorState()
+  }
+}
+
+async function toggleWorkspaceDirectory(relativePath) {
+  if (!relativePath) return
+  if (_workspaceExpandedDirs.has(relativePath)) {
+    _workspaceExpandedDirs.delete(relativePath)
+    renderWorkspaceTree()
+    return
+  }
+
+  try {
+    if (!_workspaceTreeCache.has(relativePath)) {
+      const entries = await api.listAgentWorkspaceEntries(_workspaceCurrentAgentId, relativePath)
+      _workspaceTreeCache.set(relativePath, Array.isArray(entries) ? entries : [])
+    }
+
+    _workspaceExpandedDirs.add(relativePath)
+    renderWorkspaceTree()
+  } catch (e) {
+    toast(`${t('common.loadFailed')}: ${e?.message || e}`, 'error')
+  }
+}
+
+async function openWorkspaceFile(relativePath, options = {}) {
+  const { kind = 'tree', force = false, silent = false } = options
+  if (!force && !(await confirmWorkspaceDiscardIfNeeded())) return
+  const openSeq = ++_workspaceOpenSeq
+  const agentId = _workspaceCurrentAgentId
+
+  try {
+    const file = await api.readAgentWorkspaceFile(agentId, relativePath)
+    if (openSeq !== _workspaceOpenSeq || agentId !== _workspaceCurrentAgentId) return
+    _workspaceCurrentFile = {
+      agentId,
+      relativePath,
+      kind,
+      previewable: !!file.previewable,
+      exists: true,
+    }
+    _workspaceLoadedContent = file.content || ''
+    _workspacePreviewMode = false
+    _workspaceDirty = false
+
+    if (_workspaceEditorEl) {
+      _workspaceEditorEl.value = _workspaceLoadedContent
+      _workspaceEditorEl.placeholder = t('chat.selectWorkspaceFile')
+    }
+
+    const metaParts = []
+    if (typeof file.size === 'number') metaParts.push(formatWorkspaceFileSize(file.size))
+    const timeText = formatWorkspaceFileTime(file.mtime)
+    if (timeText) metaParts.push(timeText)
+    if (_workspaceMetaEl) _workspaceMetaEl.textContent = metaParts.join(' · ')
+
+    renderWorkspaceCoreFiles()
+    renderWorkspaceTree()
+    updateWorkspaceEditorState()
+  } catch (e) {
+    if (openSeq !== _workspaceOpenSeq || agentId !== _workspaceCurrentAgentId) return
+    if (!silent) toast(`${t('chat.workspaceOpenFailed')}: ${e?.message || e}`, 'error')
+  }
+}
+
+async function reloadWorkspaceCurrentFile(force = false) {
+  if (!_workspaceCurrentFile) return
+  if (!force && !(await confirmWorkspaceDiscardIfNeeded())) return
+  if (_workspaceCurrentFile.kind === 'core' && _workspaceCurrentFile.exists === false) {
+    prepareWorkspaceDraftFile(_workspaceCurrentFile.relativePath, _workspaceCurrentFile)
+    return
+  }
+  await openWorkspaceFile(_workspaceCurrentFile.relativePath, { kind: _workspaceCurrentFile.kind, force: true })
+}
+
+function toggleWorkspacePreview() {
+  if (!_workspaceCurrentFile?.previewable) return
+  _workspacePreviewMode = !_workspacePreviewMode
+  updateWorkspaceEditorState()
+}
+
+async function saveWorkspaceCurrentFile() {
+  if (!_workspaceCurrentFile || !_workspaceEditorEl) return
+  const text = _workspaceEditorEl.value
+  const wasExisting = _workspaceCurrentFile.exists !== false
+  try {
+    await api.writeAgentWorkspaceFile(_workspaceCurrentAgentId, _workspaceCurrentFile.relativePath, text)
+    _workspaceCurrentFile = { ..._workspaceCurrentFile, exists: true }
+    _workspaceLoadedContent = text
+    _workspaceDirty = false
+    try {
+      await loadWorkspacePanelData(true)
+    } catch (refreshError) {
+      console.warn('[chat] workspace refresh after save failed:', refreshError)
+    }
+    toast(wasExisting ? t('common.saveSuccess') : t('chat.workspaceFileCreated'), 'success')
+  } catch (e) {
+    toast(`${t('common.saveFailed')}: ${e?.message || e}`, 'error')
+  }
 }
 
 async function applySelectedModel() {
@@ -675,6 +1203,8 @@ async function connectGateway() {
         _sessionKey = saved || sessionKey
         updateSessionTitle()
         loadHistory()
+      } else {
+        syncWorkspaceContext(false)
       }
       // 始终刷新会话列表（无论是否有 sessionKey）
       refreshSessionList()
@@ -757,7 +1287,7 @@ function renderSessionList(sessions) {
     const delBtn = e.target.closest('[data-del]')
     if (delBtn) { e.stopPropagation(); deleteSession(delBtn.dataset.del); return }
     const item = e.target.closest('[data-key]')
-    if (item) switchSession(item.dataset.key)
+    if (item) void switchSession(item.dataset.key)
   }
   _sessionListEl.ondblclick = (e) => {
     const labelEl = e.target.closest('.chat-session-label')
@@ -796,8 +1326,15 @@ function parseSessionLabel(key) {
   return `${agent} / ${channel}`
 }
 
-function switchSession(newKey) {
-  if (newKey === _sessionKey) return
+async function switchSession(newKey, options = {}) {
+  const { forceWorkspace = false } = options
+  if (newKey === _sessionKey) return false
+  const nextAgentId = parseSessionAgent(newKey) || 'main'
+  if (!forceWorkspace && _workspaceDirty && nextAgentId !== _workspaceCurrentAgentId) {
+    const yes = await confirmWorkspaceDiscardIfNeeded()
+    if (!yes) return false
+    discardWorkspaceChanges()
+  }
   _sessionKey = newKey
   localStorage.setItem(STORAGE_SESSION_KEY, newKey)
   _lastHistoryHash = ''
@@ -806,6 +1343,7 @@ function switchSession(newKey) {
   clearMessages()
   loadHistory()
   refreshSessionList()
+  return true
 }
 
 async function showNewSessionDialog() {
@@ -832,8 +1370,9 @@ async function showNewSessionDialog() {
         toast(t('chat.createAgentHint'), 'info')
         return
       }
-      switchSession(`agent:${agent}:${name}`)
-      toast(t('chat.sessionCreated'), 'success')
+      switchSession(`agent:${agent}:${name}`).then((switched) => {
+        if (switched) toast(t('chat.sessionCreated'), 'success')
+      })
     }
   })
 
@@ -868,7 +1407,7 @@ async function deleteSession(key) {
   try {
     await wsClient.sessionsDelete(key)
     toast(t('chat.sessionDeleted'), 'success')
-    if (key === _sessionKey) switchSession(mainKey)
+    if (key === _sessionKey) void switchSession(mainKey, { forceWorkspace: true })
     else refreshSessionList()
   } catch (e) {
     toast(`${t('common.operationFailed')}: ${e.message}`, 'error')
@@ -894,6 +1433,7 @@ async function resetCurrentSession() {
 function updateSessionTitle() {
   const el = _page?.querySelector('#chat-title')
   if (el) el.textContent = getDisplayLabel(_sessionKey)
+  syncWorkspaceContext(false)
 }
 
 function renameSession(key, labelEl) {
@@ -2530,4 +3070,31 @@ export function cleanup() {
   _hostedDefaults = null
   _hostedRuntime = { ...HOSTED_RUNTIME_DEFAULT }
   _hostedBusy = false
+  _workspaceBtn = null
+  _workspacePanelEl = null
+  _workspaceAgentBadgeEl = null
+  _workspaceAgentTitleEl = null
+  _workspacePathEl = null
+  _workspaceCoreListEl = null
+  _workspaceTreeEl = null
+  _workspaceCurrentFileEl = null
+  _workspaceMetaEl = null
+  _workspaceEditorEl = null
+  _workspacePreviewEl = null
+  _workspaceEmptyEl = null
+  _workspaceSaveBtn = null
+  _workspaceReloadBtn = null
+  _workspacePreviewBtn = null
+  _workspaceInfo = null
+  _workspaceCoreFiles = []
+  _workspaceTreeCache = new Map()
+  _workspaceExpandedDirs = new Set()
+  _workspaceCurrentAgentId = 'main'
+  _workspaceCurrentFile = null
+  _workspacePreviewMode = false
+  _workspaceDirty = false
+  _workspaceLoadedContent = ''
+  _workspaceLoading = false
+  _workspaceLoadSeq = 0
+  _workspaceOpenSeq = 0
 }
