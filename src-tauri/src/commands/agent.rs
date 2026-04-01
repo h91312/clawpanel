@@ -267,12 +267,12 @@ pub async fn get_agent_detail(id: String) -> Result<Value, String> {
         .and_then(|v| v.as_bool())
         .unwrap_or(id == "main");
 
-    agent.as_object_mut().map(|obj| {
+    if let Some(obj) = agent.as_object_mut() {
         obj.insert("workspace".to_string(), Value::String(workspace));
         obj.insert("bindings".to_string(), Value::Array(agent_bindings));
         obj.insert("isDefault".to_string(), Value::Bool(is_default));
         obj.insert("defaults".to_string(), defaults);
-    });
+    }
 
     Ok(agent)
 }
@@ -852,7 +852,7 @@ fn resolve_agent_dir(id: &str, config: &Value) -> std::path::PathBuf {
                 .find(|a| a.get("id").and_then(|v| v.as_str()) == Some(id))
                 .and_then(|a| a.get("agentDir"))
                 .and_then(|v| v.as_str())
-                .map(|s| std::path::PathBuf::from(s))
+                .map(std::path::PathBuf::from)
         });
     custom_dir.unwrap_or_else(|| {
         if id == "main" {
