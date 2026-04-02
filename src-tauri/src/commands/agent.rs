@@ -523,7 +523,7 @@ pub async fn write_agent_workspace_file(
     Ok(json!({
         "ok": true,
         "relativePath": normalized.to_string_lossy().replace('\\', "/"),
-        "size": content.as_bytes().len(),
+        "size": content.len(),
     }))
 }
 

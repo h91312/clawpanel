@@ -966,12 +966,11 @@ fn normalize_calibrated_config(mut config: Value) -> Value {
             *defaults = json!({});
         }
         if let Some(defaults_obj) = defaults.as_object_mut() {
-            if defaults_obj
+            if !defaults_obj
                 .get("workspace")
                 .and_then(|v| v.as_str())
                 .map(|v| !v.trim().is_empty())
                 .unwrap_or(false)
-                == false
             {
                 defaults_obj.insert("workspace".into(), Value::String(default_workspace));
             }
@@ -1002,12 +1001,11 @@ fn normalize_calibrated_config(mut config: Value) -> Value {
         *tools = json!({});
     }
     if let Some(tools_obj) = tools.as_object_mut() {
-        if tools_obj
+        if !tools_obj
             .get("profile")
             .and_then(|v| v.as_str())
             .map(|v| !v.trim().is_empty())
             .unwrap_or(false)
-            == false
         {
             tools_obj.insert("profile".into(), Value::String("full".into()));
         }
@@ -1016,12 +1014,11 @@ fn normalize_calibrated_config(mut config: Value) -> Value {
             *sessions = json!({});
         }
         if let Some(sessions_obj) = sessions.as_object_mut() {
-            if sessions_obj
+            if !sessions_obj
                 .get("visibility")
                 .and_then(|v| v.as_str())
                 .map(|v| !v.trim().is_empty())
                 .unwrap_or(false)
-                == false
             {
                 sessions_obj.insert("visibility".into(), Value::String("all".into()));
             }
@@ -1033,12 +1030,11 @@ fn normalize_calibrated_config(mut config: Value) -> Value {
         *gateway = json!({});
     }
     if let Some(gateway_obj) = gateway.as_object_mut() {
-        if gateway_obj
+        if !gateway_obj
             .get("mode")
             .and_then(|v| v.as_str())
             .map(|v| !v.trim().is_empty())
             .unwrap_or(false)
-            == false
         {
             gateway_obj.insert("mode".into(), Value::String("local".into()));
         }
@@ -1052,12 +1048,11 @@ fn normalize_calibrated_config(mut config: Value) -> Value {
             gateway_obj.insert("port".into(), json!(18789));
         }
 
-        if gateway_obj
+        if !gateway_obj
             .get("bind")
             .and_then(|v| v.as_str())
             .map(|v| !v.trim().is_empty())
             .unwrap_or(false)
-            == false
         {
             gateway_obj.insert("bind".into(), Value::String("loopback".into()));
         }
