@@ -729,17 +729,24 @@ function ensureValidPrimary(state) {
 function applyDefaultModel(state) {
   ensureValidPrimary(state)
   const primary = getCurrentPrimary(state.config)
-  const allModels = collectAllModels(state.config)
-  const fallbacks = allModels.filter(m => m.full !== primary).map(m => m.full)
 
   const defaults = state.config.agents.defaults
+  if (!defaults.model) defaults.model = {}
   defaults.model.primary = primary
-  defaults.model.fallbacks = fallbacks
 
-  const modelsMap = {}
-  modelsMap[primary] = {}
-  for (const fb of fallbacks) modelsMap[fb] = {}
-  defaults.models = modelsMap
+  // fallbacks / models 仅在为空时初始化（首次安装友好），不再每次保存都覆盖
+  // 避免用户精心维护的精简 fallback 链被重写，且随模型增多不断膨胀 (fixes #190)
+  if (!defaults.model.fallbacks || defaults.model.fallbacks.length === 0) {
+    const allModels = collectAllModels(state.config)
+    defaults.model.fallbacks = allModels.filter(m => m.full !== primary).map(m => m.full)
+  }
+  if (!defaults.models || Object.keys(defaults.models).length === 0) {
+    const allModels = collectAllModels(state.config)
+    const modelsMap = {}
+    modelsMap[primary] = {}
+    for (const m of allModels) { if (m.full !== primary) modelsMap[m.full] = {} }
+    defaults.models = modelsMap
+  }
 
   // 注意：不再强制同步到各 agent 的 model.primary
   // 子 Agent 的模型覆盖是 OpenClaw 正常功能（用户可通过对话为不同 Agent 设置不同模型）
