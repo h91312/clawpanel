@@ -30,6 +30,7 @@ export async function render() {
     <div id="dashboard-overview-container"></div>
     <div class="quick-actions">
       <button class="btn btn-secondary" id="btn-restart-gw">${t('dashboard.restartGw')}</button>
+      <button class="btn btn-secondary" id="btn-open-web">🌐 打开 Web Dashboard</button>
       <button class="btn btn-secondary" id="btn-check-update">${t('dashboard.checkUpdate')}</button>
       <button class="btn btn-secondary" id="btn-create-backup">${t('dashboard.createBackup')}</button>
     </div>
@@ -462,6 +463,32 @@ function bindActions(page) {
   const btnRestart = page.querySelector('#btn-restart-gw')
   const btnUpdate = page.querySelector('#btn-check-update')
   const btnCreateBackup = page.querySelector('#btn-create-backup')
+  const btnOpenWeb = page.querySelector('#btn-open-web')
+
+  // 打开 Web Dashboard 按钮
+  btnOpenWeb?.addEventListener('click', async () => {
+    try {
+      const config = await api.readOpenclawConfig()
+      const port = config?.gateway?.port || 18789
+      const host = window.__TAURI_INTERNALS__ ? '127.0.0.1' : (location.hostname || '127.0.0.1')
+      const proto = location.protocol === 'https:' ? 'https' : 'http'
+      let url = `${proto}://${host}:${port}`
+      const authToken = config?.gateway?.auth?.token
+      if (authToken) url += `/#token=${encodeURIComponent(authToken)}`
+      if (window.__TAURI_INTERNALS__) {
+        try {
+          const { open } = await import('@tauri-apps/plugin-shell')
+          await open(url)
+        } catch {
+          window.open(url, '_blank')
+        }
+      } else {
+        window.open(url, '_blank')
+      }
+    } catch (e2) {
+      toast('打开 Web Dashboard 失败: ' + (e2.message || e2), 'error')
+    }
+  })
 
   // Control UI 卡片点击 → 打开 OpenClaw 原生面板（用事件委托，因为卡片是动态渲染的）
   page.addEventListener('click', async (e) => {

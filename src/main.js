@@ -26,7 +26,6 @@ import './style/pages.css'
 import './style/chat.css'
 import './style/agents.css'
 import './style/debug.css'
-import './style/assistant.css'
 import './style/ai-drawer.css'
 
 // 初始化主题 + 国际化
@@ -322,7 +321,6 @@ async function boot() {
   registerRoute('/skills', () => import('./pages/skills.js'))
   registerRoute('/security', () => import('./pages/security.js'))
   registerRoute('/about', () => import('./pages/about.js'))
-  registerRoute('/assistant', () => import('./pages/assistant.js'))
   registerRoute('/setup', () => import('./pages/setup.js'))
   registerRoute('/channels', () => import('./pages/channels.js'))
   registerRoute('/cron', () => import('./pages/cron.js'))
@@ -342,7 +340,7 @@ async function boot() {
     <button class="mobile-hamburger" id="btn-mobile-menu">
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     </button>
-    <span class="mobile-topbar-title">ClawPanel</span>
+    <span class="mobile-topbar-title">程程ClawPanel</span>
   `
   topbar.querySelector('.mobile-hamburger').addEventListener('click', openMobileSidebar)
   mainCol.prepend(topbar)

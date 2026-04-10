@@ -115,6 +115,20 @@ export async function render() {
       <div id="language-bar"></div>
     </div>
 
+    <div class="config-section" id="font-scale-section">
+      <div class="config-section-title">字体缩放</div>
+      <div id="font-scale-bar">
+        <div style="display:flex;align-items:center;gap:var(--space-md);flex-wrap:wrap">
+          <span style="font-size:var(--font-size-xs);color:var(--text-tertiary)">A-</span>
+          <input type="range" id="font-scale-slider" min="80" max="140" value="100" step="5" style="flex:1;max-width:280px;cursor:pointer">
+          <span style="font-size:var(--font-size-lg);color:var(--text-tertiary)">A+</span>
+          <span id="font-scale-value" style="font-size:var(--font-size-sm);color:var(--text-secondary);min-width:40px;font-weight:600">100%</span>
+          <button class="btn btn-secondary btn-sm" id="btn-font-scale-reset">重置</button>
+        </div>
+        <div class="form-hint" style="margin-top:var(--space-xs)">调整聊天界面字体大小</div>
+      </div>
+    </div>
+
     ${window.__TAURI_INTERNALS__ ? `<div class="config-section" id="autostart-section">
       <div class="config-section-title">${t('settings.autostart')}</div>
       <div id="autostart-bar"><div class="stat-card loading-placeholder" style="height:48px"></div></div>
@@ -124,6 +138,7 @@ export async function render() {
 
   bindEvents(page)
   loadAll(page)
+  loadFontScale(page)
   return page
 }
 
@@ -759,6 +774,44 @@ function loadLanguageSwitcher(page) {
       pageEl.replaceWith(newPage)
     }).catch(() => {})
   }
+}
+
+// ===== 字体缩放 =====
+
+const LS_FONT_SCALE = 'clawpanel_font_scale'
+
+function loadFontScale(page) {
+  const bar = page.querySelector('#font-scale-bar')
+  if (!bar) return
+
+  // 从 localStorage 读取当前值
+  const saved = parseInt(localStorage.getItem(LS_FONT_SCALE) || '100')
+  const scale = Math.min(140, Math.max(80, saved))
+
+  // 应用到 CSS 变量
+  document.documentElement.style.setProperty('--font-scale', scale / 100)
+
+  const slider = bar.querySelector('#font-scale-slider')
+  const valueEl = bar.querySelector('#font-scale-value')
+
+  if (slider) slider.value = scale
+  if (valueEl) valueEl.textContent = scale + '%'
+
+  slider?.addEventListener('input', () => {
+    const val = parseInt(slider.value)
+    document.documentElement.style.setProperty('--font-scale', val / 100)
+    if (valueEl) valueEl.textContent = val + '%'
+    localStorage.setItem(LS_FONT_SCALE, String(val))
+  })
+
+  bar.querySelector('#btn-font-scale-reset')?.addEventListener('click', () => {
+    const defaultScale = 100
+    document.documentElement.style.setProperty('--font-scale', 1)
+    if (slider) slider.value = defaultScale
+    if (valueEl) valueEl.textContent = defaultScale + '%'
+    localStorage.setItem(LS_FONT_SCALE, String(defaultScale))
+    toast('字体大小已重置为 100%', 'success')
+  })
 }
 
 // ===== 开机自启 =====

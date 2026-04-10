@@ -1,11 +1,11 @@
 [package]
-name = "clawpanel"
+name = "chengcheng-clawpanel"
 version = "0.11.4"
 edition = "2021"
-description = "ClawPanel - OpenClaw 可视化管理面板"
-authors = ["qingchencloud"]
-repository = "https://github.com/qingchencloud/clawpanel"
-homepage = "https://github.com/qingchencloud/clawpanel"
+description = "程程ClawPanel - OpenClaw 可视化管理面板"
+authors = ["h91312"]
+repository = "https://github.com/h91312/clawpanel"
+homepage = "https://github.com/h91312/clawpanel"
 license = "AGPL-3.0"
 
 [lib]

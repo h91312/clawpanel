@@ -339,6 +339,8 @@
     "qtcoolAllExist": "所选模型均已存在",
     "qtcoolAdded": "已添加 {count} 个模型",
     "qtcoolProviderAdded": "已添加晴辰云（{count} 个模型）",
+    "fetchingRemote": "获取中...",
+    "remoteAdded": "已添加 {count} 个模型",
     "already": "已有",
     "alreadyAdded": "已添加",
     "searchPlaceholder": "搜索模型（按 ID 或名称过滤）",

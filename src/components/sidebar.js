@@ -14,7 +14,6 @@ function NAV_ITEMS_FULL() { return [
     section: t('sidebar.sectionMonitor'),
     items: [
       { route: '/dashboard', label: t('sidebar.dashboard'), icon: 'dashboard' },
-      { route: '/assistant', label: t('sidebar.assistant'), icon: 'assistant' },
       { route: '/chat', label: t('sidebar.chat'), icon: 'chat' },
       { route: '/services', label: t('sidebar.services'), icon: 'services' },
       { route: '/logs', label: t('sidebar.logs'), icon: 'logs' },
@@ -60,7 +59,6 @@ function NAV_ITEMS_SETUP() { return [
     section: '',
     items: [
       { route: '/setup', label: t('sidebar.setup'), icon: 'setup' },
-      { route: '/assistant', label: t('sidebar.assistant'), icon: 'assistant' },
     ]
   },
   {
@@ -136,9 +134,9 @@ export function renderSidebar(el) {
   let html = `
     <div class="sidebar-header">
       <div class="sidebar-logo">
-        <img src="/images/logo.png" alt="ClawPanel">
+        <img src="/images/logo.png" alt="程程ClawPanel">
       </div>
-      <span class="sidebar-title">ClawPanel</span>
+      <span class="sidebar-title">程程ClawPanel</span>
       <button class="sidebar-collapse-btn" id="btn-sidebar-collapse" title="${t('sidebar.collapse')}">${collapsed ? '»' : '«'}</button>
       <button class="sidebar-close-btn" id="btn-sidebar-close" title="${t('sidebar.closeMenu')}">&times;</button>
     </div>

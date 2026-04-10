@@ -76,6 +76,8 @@
 
 /* 共享变量（不随主题变化） */
 :root {
+  --font-scale: 1;
+
   --space-xs: 4px;
   --space-sm: 8px;
   --space-md: 12px;
