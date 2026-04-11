@@ -49,6 +49,290 @@ function buildStatusMeta(...parts) {
     .join(' · ')
 }
 
+// ============================================================================
+// Stream A Brief — 环境健康状态卡片 + 诊断修复 Modal
+// ============================================================================
+
+async function loadEnvHealth(page) {
+  const cardEl = page.querySelector('#env-health-card')
+  if (!cardEl) return
+
+  cardEl.innerHTML = `
+    <div style="padding:10px 14px;background:var(--bg-secondary);border-radius:var(--radius-md);border:1px solid var(--border);margin-bottom:12px;display:flex;align-items:center;gap:10px">
+      <span style="color:var(--text-tertiary)">🦞 环境健康状态加载中...</span>
+    </div>
+  `
+
+  let env
+  try {
+    env = await api.checkOpenclawEnv()
+  } catch (e) {
+    cardEl.innerHTML = `
+      <div style="padding:10px 14px;background:var(--bg-secondary);border-radius:var(--radius-md);border:1px solid var(--border);margin-bottom:12px;display:flex;align-items:center;gap:10px;cursor:pointer" id="env-health-card-inner">
+        <span style="font-size:16px">🦞</span>
+        <div style="flex:1">
+          <div style="font-size:var(--font-size-sm);color:var(--text-secondary)">环境检测失败</div>
+          <div style="font-size:var(--font-size-xs);color:var(--text-tertiary)">${escapeHtml(String(e?.message || e))}</div>
+        </div>
+        <span style="color:var(--error)">⚠</span>
+      </div>
+    `
+    cardEl.querySelector('#env-health-card-inner')?.addEventListener('click', () => showDiagnosticModal(page))
+    return
+  }
+
+  const nodeOk = env?.node?.ok === true
+  const clawOk = env?.openclaw?.ok === true
+  const gwOk = env?.gateway?.ok === true
+  const npmOk = env?.npm?.ok === true
+
+  const overallOk = nodeOk && clawOk && npmOk
+  const color = overallOk ? 'var(--success)' : (nodeOk && npmOk ? 'var(--warning)' : 'var(--error)')
+  const label = overallOk ? '全部正常' : (nodeOk && npmOk ? 'CLI 待修复' : '环境异常')
+
+  const items = [
+    { name: 'Node.js', ok: nodeOk, detail: env?.node?.version || env?.node?.error || '未检测' },
+    { name: 'openclaw', ok: clawOk, detail: env?.openclaw?.version || env?.openclaw?.error || '未检测' },
+    { name: 'Gateway', ok: gwOk, detail: env?.gateway?.raw || env?.gateway?.error || '未知' },
+    { name: 'npm', ok: npmOk, detail: env?.npm?.version || env?.npm?.error || '未检测' },
+  ]
+
+  cardEl.innerHTML = `
+    <div id="env-health-card-inner" style="padding:10px 14px;background:var(--bg-secondary);border-radius:var(--radius-md);border:1px solid var(--border);margin-bottom:12px;display:flex;align-items:center;gap:10px;cursor:pointer;transition:border-color .2s" title="点击打开诊断与修复">
+      <span style="font-size:16px">🦞</span>
+      <div style="flex:1;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span id="env-overall-label" style="font-size:var(--font-size-sm);color:${color};font-weight:600">${label}</span>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${items.map(item => `
+            <span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;color:${item.ok ? 'var(--success)' : 'var(--error)'}">
+              <span>${item.ok ? '✓' : '✗'}</span>
+              ${escapeHtml(item.name)}
+            </span>
+          `).join('')}
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="btn btn-secondary btn-sm" id="btn-diagnose" style="font-size:11px;padding:3px 10px">诊断与修复</button>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="color:var(--text-tertiary)"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+    </div>
+  `
+
+  cardEl.querySelector('#env-health-card-inner')?.addEventListener('click', (e) => {
+    if (!e.target.closest('#btn-diagnose')) showDiagnosticModal(page, env)
+  })
+  cardEl.querySelector('#btn-diagnose')?.addEventListener('click', () => showDiagnosticModal(page, env))
+}
+
+async function showDiagnosticModal(page, cachedEnv) {
+  const env = cachedEnv || await api.checkOpenclawEnv().catch(() => null)
+
+  const nodeOk = env?.node?.ok === true
+  const clawOk = env?.openclaw?.ok === true
+  const npmOk = env?.npm?.ok === true
+
+  const { showModal } = await import('../components/modal.js').catch(() => ({ showModal: null }))
+
+  // 如果没有 modal 组件，用原生实现
+  if (!showModal) {
+    const logs = []
+    logs.push(`[${new Date().toLocaleTimeString('zh-CN')}] 开始环境诊断...`)
+
+    const overlay = document.createElement('div')
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px'
+    const dialog = document.createElement('div')
+    dialog.style.cssText = 'background:var(--bg-primary);border:1px solid var(--border);border-radius:var(--radius-lg);width:100%;max-width:640px;max-height:80vh;display:flex;flex-direction:column;font-size:var(--font-size-sm)'
+
+    const header = document.createElement('div')
+    header.style.cssText = 'padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0'
+    header.innerHTML = `
+      <div style="font-weight:600">诊断与修复</div>
+      <button id="modal-close" style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);padding:4px;line-height:1">✕</button>
+    `
+    const body = document.createElement('div')
+    body.style.cssText = 'padding:16px 20px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:12px'
+
+    body.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        ${[['Node.js', nodeOk, env?.node?.version || env?.node?.error || ''],
+          ['openclaw', clawOk, env?.openclaw?.version || env?.openclaw?.error || ''],
+          ['npm', npmOk, env?.npm?.version || env?.npm?.error || ''],
+          ['Gateway', env?.gateway?.ok === true, env?.gateway?.raw || env?.gateway?.error || ''],
+        ].map(([name, ok, detail]) => `
+          <div style="padding:8px 10px;background:var(--bg-secondary);border-radius:var(--radius-sm);border:1px solid ${ok ? 'var(--success)' : 'var(--error)'};opacity:${ok ? 1 : 0.8}">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
+              <span style="color:${ok ? 'var(--success)' : 'var(--error)'}">${ok ? '✓' : '✗'}</span>
+              <span style="font-weight:600">${escapeHtml(String(name))}</span>
+            </div>
+            <div style="font-size:11px;color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(String(detail))}">${escapeHtml(String(detail))}</div>
+          </div>
+        `).join('')}
+      </div>
+      <div id="diag-logs" style="padding:8px 10px;background:#0d1117;color:#c9d1d9;border-radius:var(--radius-sm);font-family:monospace;font-size:12px;min-height:120px;max-height:240px;overflow-y:auto;white-space:pre-wrap;line-height:1.5"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" id="btn-fix-claw">修复 openclaw</button>
+        <button class="btn btn-secondary btn-sm" id="btn-fix-plugins">修复插件</button>
+        <button class="btn btn-secondary btn-sm" id="btn-open-configure">配置向导</button>
+        <button class="btn btn-secondary btn-sm" id="btn-refresh-env">刷新</button>
+      </div>
+    `
+
+    const logsEl = body.querySelector('#diag-logs')
+    const addLog = (msg) => {
+      const ts = new Date().toLocaleTimeString('zh-CN')
+      logs.push(`[${ts}] ${msg}`)
+      if (logsEl) logsEl.textContent = logs.join('\n')
+      logsEl.scrollTop = logsEl.scrollHeight
+    }
+
+    dialog.appendChild(header)
+    dialog.appendChild(body)
+    overlay.appendChild(dialog)
+    document.body.appendChild(overlay)
+
+    const close = () => {
+      document.body.removeChild(overlay)
+    }
+
+    header.querySelector('#modal-close').addEventListener('click', close)
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close() })
+
+    body.querySelector('#btn-refresh-env')?.addEventListener('click', async () => {
+      addLog('刷新环境状态...')
+      try {
+        const fresh = await api.checkOpenclawEnv()
+        loadEnvHealth(page)
+        addLog(`刷新完成: Node=${fresh?.node?.version || 'N/A'}, claw=${fresh?.openclaw?.version || 'N/A'}`)
+      } catch (e) {
+        addLog(`刷新失败: ${e}`)
+      }
+    })
+
+    body.querySelector('#btn-fix-claw')?.addEventListener('click', async () => {
+      addLog('开始安装 openclaw...')
+      addLog('(Gateway 将在安装前自动停止)')
+      try {
+        const result = await api.installOpenClaw()
+        addLog(`安装完成: ${result?.installed_version || '成功'}`)
+        loadEnvHealth(page)
+      } catch (e) {
+        addLog(`安装失败: ${e}`)
+      }
+    })
+
+    body.querySelector('#btn-fix-plugins')?.addEventListener('click', async () => {
+      addLog('开始修复插件...')
+      try {
+        const result = await api.repairOpenClawPlugins()
+        addLog(`插件修复完成: 共 ${result?.total || 0} 个`)
+        if (result?.results) {
+          for (const r of result.results) {
+            addLog(`  ${r.plugin}: ${r.success ? '✓' : '✗'}`)
+          }
+        }
+      } catch (e) {
+        addLog(`修复失败: ${e}`)
+      }
+    })
+
+    body.querySelector('#btn-open-configure')?.addEventListener('click', async () => {
+      addLog('启动配置向导...')
+      try {
+        await api.startOpenclawConfigure('')
+        addLog('配置向导已启动')
+        close()
+      } catch (e) {
+        addLog(`启动失败: ${e}`)
+      }
+    })
+
+    addLog('诊断环境: ' + JSON.stringify(env, null, 2).split('\n').slice(0, 3).join(' '))
+    return
+  }
+
+  // 有 modal 组件时
+  const modal = showModal('诊断与修复')
+  modal.setContent(`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+      ${[['Node.js', nodeOk, env?.node?.version || env?.node?.error || ''],
+        ['openclaw', clawOk, env?.openclaw?.version || env?.openclaw?.error || ''],
+        ['npm', npmOk, env?.npm?.version || env?.npm?.error || ''],
+        ['Gateway', env?.gateway?.ok === true, env?.gateway?.raw || env?.gateway?.error || ''],
+      ].map(([name, ok, detail]) => `
+        <div style="padding:8px 10px;background:var(--bg-secondary);border-radius:var(--radius-sm);border:1px solid ${ok ? 'var(--success)' : 'var(--error)'};opacity:${ok ? 1 : 0.8}">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
+            <span style="color:${ok ? 'var(--success)' : 'var(--error)'}">${ok ? '✓' : '✗'}</span>
+            <span style="font-weight:600">${escapeHtml(String(name))}</span>
+          </div>
+          <div style="font-size:11px;color:var(--text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(String(detail))}">${escapeHtml(String(detail))}</div>
+        </div>
+      `).join('')}
+    </div>
+    <div id="diag-logs" style="padding:8px 10px;background:#0d1117;color:#c9d1d9;border-radius:var(--radius-sm);font-family:monospace;font-size:12px;min-height:120px;max-height:240px;overflow-y:auto;white-space:pre-wrap;line-height:1.5;margin-bottom:12px"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-secondary btn-sm" id="btn-fix-claw-d">修复 openclaw</button>
+      <button class="btn btn-secondary btn-sm" id="btn-fix-plugins-d">修复插件</button>
+      <button class="btn btn-secondary btn-sm" id="btn-open-configure-d">配置向导</button>
+      <button class="btn btn-secondary btn-sm" id="btn-refresh-env-d">刷新</button>
+    </div>
+  `)
+
+  const logs = []
+  const logsEl = modal._dialog?.querySelector('#diag-logs') || document.querySelector('#diag-logs')
+  const addLog = (msg) => {
+    const ts = new Date().toLocaleTimeString('zh-CN')
+    logs.push(`[${ts}] ${msg}`)
+    if (logsEl) logsEl.textContent = logs.join('\n')
+    if (logsEl) logsEl.scrollTop = logsEl.scrollHeight
+  }
+
+  modal._dialog?.querySelector('#btn-refresh-env-d')?.addEventListener('click', async () => {
+    addLog('刷新环境状态...')
+    try {
+      const fresh = await api.checkOpenclawEnv()
+      loadEnvHealth(page)
+      addLog(`刷新完成: Node=${fresh?.node?.version || 'N/A'}, claw=${fresh?.openclaw?.version || 'N/A'}`)
+    } catch (e) { addLog(`刷新失败: ${e}`) }
+  })
+
+  modal._dialog?.querySelector('#btn-fix-claw-d')?.addEventListener('click', async () => {
+    addLog('开始安装 openclaw...')
+    try {
+      const result = await api.installOpenClaw()
+      addLog(`安装完成: ${result?.installed_version || '成功'}`)
+      loadEnvHealth(page)
+    } catch (e) { addLog(`安装失败: ${e}`) }
+  })
+
+  modal._dialog?.querySelector('#btn-fix-plugins-d')?.addEventListener('click', async () => {
+    addLog('开始修复插件...')
+    try {
+      const result = await api.repairOpenClawPlugins()
+      addLog(`插件修复完成: 共 ${result?.total || 0} 个`)
+      if (result?.results) {
+        for (const r of result.results) {
+          addLog(`  ${r.plugin}: ${r.success ? '✓' : '✗'}`)
+        }
+      }
+    } catch (e) { addLog(`修复失败: ${e}`) }
+  })
+
+  modal._dialog?.querySelector('#btn-open-configure-d')?.addEventListener('click', async () => {
+    addLog('启动配置向导...')
+    try {
+      await api.startOpenclawConfigure('')
+      addLog('配置向导已启动')
+      modal.close()
+    } catch (e) { addLog(`启动失败: ${e}`) }
+  })
+
+  addLog('诊断环境: ' + JSON.stringify(env, null, 2).split('\n').slice(0, 3).join(' '))
+}
+
+// ============================================================================
+// 原有的 setup 函数
+// ============================================================================
+
 function renderDetectionHint(pathValue, sourceLabel = '') {
   const normalizedPath = String(pathValue || '').trim()
   const normalizedSource = String(sourceLabel || '').trim()
@@ -102,11 +386,20 @@ export async function render() {
         </div>
       </div>
 
+      <div id="env-health-card"></div>
       <div id="setup-steps"></div>
     </div>
   `
 
   page.querySelector('#btn-recheck').addEventListener('click', () => runDetect(page))
+
+  // 诊断与修复按钮（放在环境卡片旁边或下方）
+  const envCard = page.querySelector('#env-health-card')
+  if (envCard) {
+    // 在 render 后动态添加按钮，先占位
+  }
+
+  loadEnvHealth(page)
   runDetect(page)
   return page
 }
@@ -352,6 +645,19 @@ function renderSteps(page, { node, git, cliOk, config, version }) {
           <button class="btn btn-secondary btn-sm" id="btn-goto-channels">${t('setup.messageChannels')}</button>
         </div>
       </div>
+
+      <!-- MiniMax OAuth 快捷入口 (B2) -->
+      <div class="config-section" style="text-align:left;margin-top:var(--space-md)">
+        <div class="config-section-title">🎫 ${t('setup.minimaxOAuth') || 'MiniMax OAuth 登录'}</div>
+        <p style="color:var(--text-secondary);font-size:var(--font-size-sm);line-height:1.5;margin-bottom:10px">
+          ${t('setup.minimaxOAuthDesc') || '通过 MiniMax 官方 OAuth 授权登录，无需手动输入 API Key。点击下方按钮将在新窗口中打开 OpenClaw 配置向导。'}
+        </p>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <span id="minimax-status-badge" style="font-size:var(--font-size-xs);color:var(--text-tertiary)">检测中...</span>
+          <button class="btn btn-primary btn-sm" id="btn-minimax-oauth">🎫 ${t('setup.startOAuth') || '启动 OAuth 登录'}</button>
+        </div>
+      </div>
+
       <div style="margin-top:var(--space-lg)">
         <button class="btn btn-primary" id="btn-enter" style="min-width:200px">${t('setup.enterPanel')}</button>
       </div>
@@ -898,6 +1204,24 @@ function bindEvents(page, nodeOk, detectState) {
   const installBtn = page.querySelector('#btn-install')
   if (!installBtn || !nodeOk) return
 
+  // ===== MiniMax OAuth 按钮 (B2) =====
+  page.querySelector('#btn-minimax-oauth')?.addEventListener('click', async () => {
+    const btn = page.querySelector('#btn-minimax-oauth')
+    const badge = page.querySelector('#minimax-status-badge')
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ 启动中...' }
+    try {
+      await api.startOpenclawConfigure('model')
+      toast('已打开 OpenClaw 配置向导，请在弹出的窗口中选择 MiniMax CN — OAuth 并完成授权', 'info', 10000)
+    } catch (e) {
+      toast('启动配置向导失败: ' + (e?.message || String(e)), 'error')
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = `🎫 ${t('setup.startOAuth') || '启动 OAuth 登录'}` }
+    }
+  })
+
+  // 检测 MiniMax OAuth 状态
+  refreshMinimaxStatus(page).catch(() => {})
+
   installBtn.addEventListener('click', async () => {
     const source = page.querySelector('input[name="install-source"]:checked')?.value || 'chinese'
     const method = (source === 'official') ? 'npm' : (page.querySelector('#install-method')?.value || 'auto')
@@ -1014,5 +1338,25 @@ function bindEvents(page, nodeOk, detectState) {
       modal.setError(diagnosis.title)
     }
   })
+}
+
+// ===== MiniMax OAuth 状态检测 (B2) =====
+async function refreshMinimaxStatus(page) {
+  const badge = page.querySelector('#minimax-status-badge')
+  if (!badge) return
+  try {
+    const models = await api.getOpenclawModels()
+    const mp = models?.providers?.['minimax-portal']
+    if (mp) {
+      badge.innerHTML = `<span style="color:var(--success);font-weight:600">✓ ${t('setup.minimaxConnected') || 'MiniMax OAuth 已连接'}</span>`
+      badge.style.color = 'var(--success)'
+    } else {
+      badge.textContent = t('setup.minimaxNotConnected') || '未连接（点击上方按钮登录）'
+      badge.style.color = 'var(--text-tertiary)'
+    }
+  } catch (e) {
+    badge.textContent = t('setup.minimaxStatusUnknown') || '状态未知'
+    badge.style.color = 'var(--text-tertiary)'
+  }
 }
 

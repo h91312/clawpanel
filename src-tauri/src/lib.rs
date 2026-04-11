@@ -211,6 +211,16 @@ pub fn run() {
             update::download_frontend_update,
             update::rollback_frontend_update,
             update::get_update_status,
+            update::check_openclaw_update,
+            update::do_openclaw_update,
+            // Stream A Brief — OpenClaw 环境诊断与修复
+            update::check_openclaw_env,
+            update::install_openclaw,
+            update::repair_openclaw_plugins,
+            update::get_openclaw_versions,
+            update::install_openclaw_version,
+            update::start_openclaw_configure,
+            update::get_openclaw_models,
         ])
         .on_window_event(|window, event| {
             // 关闭窗口时最小化到托盘，不退出应用

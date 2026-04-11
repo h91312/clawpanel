@@ -193,6 +193,8 @@ export const api = {
 
   // 配置（读缓存，写清缓存）
   getVersionInfo: () => cachedInvoke('get_version_info', {}, 30000),
+  checkOpenclawUpdate: () => invoke('check_openclaw_update', {}, { timeout: 30000 }),
+  doOpenclawUpdate: (emitLog = false) => invoke('do_openclaw_update', { emitLog }, { timeout: 600000 }),
   getStatusSummary: () => cachedInvoke('get_status_summary', {}, 60000),
   readOpenclawConfig: () => cachedInvoke('read_openclaw_config'),
   calibrateOpenclawConfig: (mode = 'inherit') => { invalidate('read_openclaw_config', 'check_installation', 'list_backups', 'get_services_status', 'get_status_summary'); return invoke('calibrate_openclaw_config', { mode }).then(r => { _debouncedReloadGateway(); return r }) },
@@ -364,6 +366,15 @@ export const api = {
   downloadFrontendUpdate: (url, expectedHash) => invoke('download_frontend_update', { url, expectedHash: expectedHash || '' }),
   rollbackFrontendUpdate: () => invoke('rollback_frontend_update'),
   getUpdateStatus: () => invoke('get_update_status'),
+
+  // Stream A Brief — OpenClaw 环境诊断与修复
+  checkOpenclawEnv: () => invoke('check_openclaw_env'),
+  installOpenClaw: () => invoke('install_openclaw'),
+  repairOpenClawPlugins: () => invoke('repair_openclaw_plugins'),
+  getOpenclawVersions: () => invoke('get_openclaw_versions'),
+  installOpenClawVersion: (version) => invoke('install_openclaw_version', { version }),
+  startOpenclawConfigure: (section) => invoke('start_openclaw_configure', { section: section || '' }),
+  getOpenclawModels: () => invoke('get_openclaw_models'),
 
   // 数据目录 & 图片存储
   ensureDataDir: () => invoke('assistant_ensure_data_dir'),
